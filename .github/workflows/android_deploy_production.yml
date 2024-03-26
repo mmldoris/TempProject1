@@ -1,0 +1,36 @@
+name: Android - Deploy Production build to Firebase
+
+on:
+  push:
+    branches:
+      - main
+      - test-lucas
+
+jobs:
+  build_and_deploy_android:
+    name: Android - Deploy Production build to Firebase
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v3
+
+      - name: Find HEAD commit
+        id: head
+        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build changelog on "main"
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: ".github/workflows/changelog-config.json"
+          # Listing PRs from the last tag to the HEAD commit
+          toTag: ${{ steps.head.outputs.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Print release notes
+        run: |
+          echo categorized_prs ${{ steps.changelog.outputs.categorized_prs }}
+          echo uncategorized_prs ${{ steps.changelog.outputs.uncategorized_prs }}
+          echo "${{ steps.changelog.outputs.changelog }}"
