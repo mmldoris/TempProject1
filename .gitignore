@@ -1,0 +1,13 @@
+# Miscellaneous
+.DS_Store
+
+# VSCode
+.vscode
+
+# Intellij
+*.iml
+.idea/*
+
+# Mason
+mason-lock.json
+.mason/
