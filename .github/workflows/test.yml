@@ -1,0 +1,135 @@
+name: CI
+on:
+  # Trigger the workflow on push or pull request,
+  # but push action is only for the feature branch
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+
+jobs:
+  test:
+    name: Template initializing scripts test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v3
+
+      - name: Set up Flutter environment
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.10.5'
+
+      - name: Generate new project
+        run: |
+          dart pub global activate mason_cli
+          mason get
+          mason make template -c mason-config.json
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Run code generator
+        run: flutter packages pub run build_runner build --delete-conflicting-outputs
+
+      - name: Check for any formatting issues in the code
+        run: dart format --set-exit-if-changed .
+
+      - name: Statically analyze the Dart code for any errors
+        run: flutter analyze .
+
+      - name: Run widget tests, unit tests
+        run: flutter test --machine --coverage
+
+  generate_mason_bundle:
+    # The job generate_mason_bundle identify that the job test must complete successfully
+    # before this generate_mason_bundle job will run
+    needs: test
+    name: Generate Mason bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Set up Flutter environment
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.10.5'
+
+      - name: Install Mason CLI
+        run: |
+          dart pub global activate mason_cli
+          mason get
+
+      - name: Generate Mason bundle
+        run: |
+          mason bundle bricks/permission_handler -t dart -o bricks/template/hooks/bundles
+
+      - id: changes
+        name: Check for changes in the Mason bricks
+        run: |
+          count=$(git status bricks --porcelain | wc -l)
+          echo "count=$count" >> $GITHUB_OUTPUT
+
+      - name: Commit & push the Mason bundle changes
+        if: steps.changes.outputs.count > 0
+        run: |
+          git config user.name team-nimblehq
+          git config user.email bot@nimblehq.co
+          git add bricks
+          git commit -m "[Chore] Generate Mason bundle"
+          git push
+
+  generate_sample_project:
+    # The job generate_sample_project identify that the job generate_mason_bundle must complete successfully
+    # before this generate_sample_project job will run
+    needs: generate_mason_bundle
+    name: Generate the sample project
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Set up Flutter environment
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.10.5'
+
+      - name: Remove the old sample project
+        run: |
+          rm -rf sample
+
+      - name: Set the project name "sample"
+        uses: jossef/action-set-json-field@v2.1
+        with:
+          file: mason-config.json
+          field: project_name
+          value: sample
+
+      - name: Generate the new "sample" project
+        run: |
+          dart pub global activate mason_cli
+          mason get
+          mason make template -c mason-config.json -o sample
+
+      - id: changes
+        name: Check for changes in the sample project
+        run: |
+          count=$(git status sample --porcelain | wc -l)
+          echo "count=$count" >> $GITHUB_OUTPUT
+
+      - name: Commit & push the sample project changes
+        if: steps.changes.outputs.count > 0
+        run: |
+          git config user.name team-nimblehq
+          git config user.email bot@nimblehq.co
+          git add sample
+          git commit -m "[Chore] Generate & update sample project"
+          git push
